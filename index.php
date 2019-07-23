@@ -1,10 +1,17 @@
 <?php 
-
-	include 'PDO.class_conn.php';
 	
-	//require __DIR__.'/vendor/autoload.php';
+	try{
+		
+		$dbh = new pdo( 'mysql:host=localhost:3306;dbname=emp;charset=utf8',
+				'root',
+				'password',
+				array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));
+	}catch(PDOException $ex){
+		die(json_encode(array('outcome' => false, 'message' => 'Unable to connect')));
+	}
 	
-	require '../web-inf/vendor/autoload.php';
+	
+	require '/vendor/autoload.php';
 	
 	error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
 	
@@ -17,6 +24,7 @@
 	
 	
 	$db_name = 'spmed';
+	$create_data	=	date('Y-m-d');
 	
 	$spreadsheet->setActiveSheetIndex(0);
 	$spreadsheet->getActiveSheet()->setTitle('Table List');
@@ -40,8 +48,13 @@
 	$spreadsheet->getActiveSheet()->getColumnDimension('D')->setWidth(48);
 	$spreadsheet->getActiveSheet()->getColumnDimension('E')->setWidth(15);
 	
-	$tb_list = $DB->query('SELECT table_name, table_comment FROM information_schema.tables
-							WHERE table_schema = :DB',array('DB'=>$db_name));
+	$sql = 'SELECT table_name, table_comment FROM information_schema.tables
+			WHERE table_schema = :DB';
+	$rs = $dbh->prepare($sql);
+	$rs->bindValue(':DB', $db_name);
+	$rs->execute();
+	$tb_list= $rs->fetchall();
+	
 	
 	$num = 1;
 	$index = 4;
@@ -65,12 +78,38 @@
 			],
 	];
 	
+	
+	$header_styleArray = [
+			'fill' => [
+					'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+					'startColor' => [
+							'argb' => 'd1ebff',
+					],
+			],
+			
+	];
+	
+	$title_styleArray = [
+			'font' => [
+					'bold' => true,
+			],
+			'fill' => [
+					'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+					'startColor' => [
+							'argb' => 'd2ffd1',
+					],
+			],
+	];
+	
 	$spreadsheet->getActiveSheet()->getStyle('B2:E'.($index-1))->applyFromArray($styleArray);
 	
+	$sql	= 'SELECT table_name, table_comment FROM information_schema.tables
+				WHERE table_schema = :database_name';
 	
-	
-	$tb_list = $DB->query('SELECT table_name, table_comment FROM information_schema.tables
-							WHERE table_schema = :database_name',array('database_name'=>$db_name));
+	$rs = $dbh->prepare($sql);
+	$rs->bindValue(':database_name', $db_name);
+	$rs->execute();
+	$tb_list= $rs->fetchall();
 	
 	$i = 1;
 	
@@ -92,6 +131,9 @@
  		$sheet = $spreadsheet->getActiveSheet()->setCellValue('C4', 'Table_Name');
  		$sheet = $spreadsheet->getActiveSheet()->setCellValue('C5', 'Writer');
  		
+ 		$sheet = $spreadsheet->getActiveSheet()->setCellValue('F4', 'Table_Comment');
+ 		$sheet = $spreadsheet->getActiveSheet()->setCellValue('F5', 'Date');
+ 		
  		$sheet = $spreadsheet->getActiveSheet()->setCellValue('B6', 'No');
  		$sheet = $spreadsheet->getActiveSheet()->setCellValue('C6', 'Column Name');
  		$sheet = $spreadsheet->getActiveSheet()->setCellValue('D6', 'Type');
@@ -102,13 +144,28 @@
  		
  		$sheet = $spreadsheet->getActiveSheet()->mergeCells('D4:E4');
  		$sheet = $spreadsheet->getActiveSheet()->setCellValue('D4', $tb_row['table_name']);
+ 		
+ 		$sheet = $spreadsheet->getActiveSheet()->mergeCells('D2:H2');
+ 		$sheet = $spreadsheet->getActiveSheet()->mergeCells('D3:H3');
+ 		$sheet = $spreadsheet->getActiveSheet()->mergeCells('D5:E5');
+ 		
+ 		$sheet = $spreadsheet->getActiveSheet()->mergeCells('G4:H4');
+ 		$sheet = $spreadsheet->getActiveSheet()->setCellValue('G4', $tb_row['table_comment']);
 		
-// 		//$spreadsheet->getActiveSheet()->setTitle($arr[$i]);
-		
- 		$spreadsheet->getActiveSheet()->getStyle('B2:B5')
+ 		$sheet = $spreadsheet->getActiveSheet()->mergeCells('G5:H5');
+ 		$sheet = $spreadsheet->getActiveSheet()->setCellValue('G5', $create_data);
+ 		
+ 		$spreadsheet->getActiveSheet()->getStyle('B2:C5')->applyFromArray($header_styleArray);
+ 		$spreadsheet->getActiveSheet()->getStyle('F4:F5')->applyFromArray($header_styleArray);
+ 		$spreadsheet->getActiveSheet()->getStyle('B6:H6')->applyFromArray($title_styleArray);
+ 		
+ 		$spreadsheet->getActiveSheet()->getStyle('B2:H6')
  		->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
 		
- 		$sheet->getStyle('B2:B5')->getAlignment()->setHorizontal('center');
+ 		$sheet->getStyle('B2:H6')->getAlignment()->setHorizontal('center');
+ 		
+ 		
+ 		
  		$spreadsheet->getActiveSheet()->getColumnDimension('B')->setWidth(9);
  		$spreadsheet->getActiveSheet()->getColumnDimension('C')->setWidth(35);
  		$spreadsheet->getActiveSheet()->getColumnDimension('D')->setWidth(13);
@@ -117,7 +174,7 @@
  		$spreadsheet->getActiveSheet()->getColumnDimension('G')->setWidth(30);
  		$spreadsheet->getActiveSheet()->getColumnDimension('H')->setWidth(15);
  		
- 		$column_list = $DB->query("SELECT UPPER(COLUMN_NAME) as COLUMN_NAME, UPPER(DATA_TYPE) as DATA_TYPE, 
+ 		$sql = "SELECT UPPER(COLUMN_NAME) as COLUMN_NAME, UPPER(DATA_TYPE) as DATA_TYPE, 
 									IFNULL(CHARACTER_MAXIMUM_LENGTH,NUMERIC_PRECISION+1) as LENGTH , 
 									CONCAT(
 									CASE COLUMN_KEY
@@ -128,11 +185,15 @@
 									FROM
 									information_schema.columns
 									WHERE
-									table_schema = :database_name AND table_name = :tb_name",
-				 					array(	'database_name'=>$db_name,
-				 							'tb_name'=>$tb_row['table_name']
-				 					));
-		
+									table_schema = :database_name AND table_name = :tb_name";
+ 		
+ 		$rs = $dbh->prepare($sql);
+ 		$rs->bindValue(':database_name', $db_name);
+ 		$rs->bindValue(':tb_name', $tb_row['table_name']);
+ 		$rs->execute();
+ 		$column_list= $rs->fetchall();
+ 		
+ 		
  		$j = 7;
  		$num = 1;
  		
@@ -150,6 +211,10 @@
  			
  		}
  		
+ 		$spreadsheet->getActiveSheet()->getStyle('B2:H'.($j-1))->applyFromArray($styleArray);
+ 		$sheet->getStyle('B7:B'.$j)->getAlignment()->setHorizontal('center');
+ 		$sheet->getStyle('D7:E'.$j)->getAlignment()->setHorizontal('center');
+		
 		$i++;
 	}
 	
